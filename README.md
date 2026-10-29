@@ -33,20 +33,6 @@ or create `config/gemini.server.json` yourself. That file is gitignored:
 
 `GEMINI_API_KEY` wins if both are set. Leave both empty, or let the call fail, and the app uses the rehearsal splits in `ruleFor()`. The checks still run. The operations audit says the model was not called.
 
-The preview download leaves out files whose names start with a dot, so `.gitignore` may be missing from the zip. The same rules are in the file named `gitignore` (no dot) at the project root. After you unzip, rename that file to `.gitignore`.
-
-```gitignore
-node_modules/
-dist/
-.output/
-.vercel/
-artifacts/
-server/policies/
-
-# Model key. Create this locally, or set GEMINI_API_KEY instead.
-config/gemini.server.json
-```
-
 ## What the customer does
 
 1. Sign in and look at the account. Nothing is invested.
