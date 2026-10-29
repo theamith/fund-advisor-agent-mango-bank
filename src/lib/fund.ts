@@ -398,7 +398,9 @@ export function evaluate(
   const shockRow = held.find((row) => row.scenario === "Rate shock");
   const examLine =
     fallingRow && shockRow
-      ? `Falling: new file is $${fallingRow.agentGap.toLocaleString()} from the ideal, live file is $${fallingRow.liveGap.toLocaleString()}. Rate shock: new file is $${shockRow.agentGap.toLocaleString()} from the ideal, live file is $${shockRow.liveGap.toLocaleString()}.`
+      ? version >= 3
+        ? `Falling: new file is $${fallingRow.agentGap.toLocaleString()} from the ideal, live file is $${fallingRow.liveGap.toLocaleString()}. Rate shock: new file is $${shockRow.agentGap.toLocaleString()} from the ideal, live file is $${shockRow.liveGap.toLocaleString()}.`
+        : `Falling: this mix is $${fallingRow.agentGap.toLocaleString()} from the ideal, an even split is $${fallingRow.humanGap.toLocaleString()}. Rate shock: this mix is $${shockRow.agentGap.toLocaleString()} from the ideal, an even split is $${shockRow.humanGap.toLocaleString()}.`
       : "";
   const level3 =
     version >= 3
@@ -416,7 +418,14 @@ export function evaluate(
         }
       : {
           pass: version >= 2 && level1.pass && beatsHuman,
-          detail: version < 2 ? "The exam is Falling and Rate shock. A file that only wins on Rising does not pass." : beatsHuman ? "On both exam markets the file ends closer to the ideal than the human mix." : "The exam is not better than the human mix.",
+          detail:
+            version < 2
+              ? "The exam is Falling and Rate shock. A file that only wins on Rising does not pass."
+              : !level1.pass
+                ? "The safety limit failed, so the exam does not count."
+                : beatsHuman
+                  ? `On both exam markets the file ends closer to the ideal than an even split. ${examLine}`
+                  : `It does not beat an even split on both exam markets. ${examLine}`,
           rows: scored,
         };
   const ship = version === 2 ? level1.pass && level2.pass && level3.pass : version >= 3 ? level1.pass && level2.pass && beatsHuman && beatsLive : false;

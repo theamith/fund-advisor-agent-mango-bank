@@ -110,7 +110,11 @@ export function FundWorkbench({
           {view.outcome === "tenure" ? <p className="mt-2 text-sm text-muted">The {view.goal?.months} months are over. Balance {view.pace ? money(view.pace.balance) : ""}. The mix stops.</p> : null}
           {view.version === 1 && view.report && !view.report.level1.pass ? <p className="mt-2 text-sm text-muted">Equity is over 70%, or the shares do not add to 100%. Review this mix can try a legal split. Nothing turns on yet.</p> : null}
           {view.version === 1 && view.report?.level1.pass && !view.report.level3.pass ? <p className="mt-2 text-sm text-muted">The safety limit passed. The exam markets did not, so this mix stays off.</p> : null}
-          {view.version === 2 && !view.shipped && view.report && !view.report.ship ? <p className="mt-2 text-sm text-bad">Use this mix stays off. It did not beat an even split on the markets it was not shown, or it is over the safety limit.</p> : null}
+          {view.version === 2 && !view.shipped && view.report && !view.report.ship ? (
+            <p className="mt-2 text-sm text-bad">
+              {view.report.level1.pass ? view.report.level3.detail : view.report.level1.detail} Change the numbers below and click outside a box. The checks run again. No AI call.
+            </p>
+          ) : null}
         </div>
         {view.pace && view.goal && !view.outcome ? (
           <article className="mt-4 rounded-card border border-line bg-surface p-4">
@@ -212,7 +216,6 @@ function MixEditor({ rule, busy, onSave }: { rule: MixRule; busy: boolean; onSav
   const [up, setUp] = useState(shares(rule.up));
   const [down, setDown] = useState(shares(rule.down));
   const draft = useRef({ up, down });
-  const same = rule.up.cash === rule.down.cash && rule.up.bond === rule.down.bond && rule.up.equity === rule.down.equity;
   const signature = `${rule.up.cash}:${rule.up.bond}:${rule.up.equity}:${rule.down.cash}:${rule.down.bond}:${rule.down.equity}`;
   const [seen, setSeen] = useState(signature);
   if (seen !== signature) {
@@ -231,13 +234,13 @@ function MixEditor({ rule, busy, onSave }: { rule: MixRule; busy: boolean; onSav
     const parsedUp = read(draft.current.up);
     const parsedDown = read(draft.current.down);
     if ([parsedUp.cash, parsedUp.bond, parsedUp.equity, parsedDown.cash, parsedDown.bond, parsedDown.equity].some((part) => !Number.isFinite(part))) return;
-    onSave({ up: parsedUp, down: same ? parsedUp : parsedDown });
+    onSave({ up: parsedUp, down: parsedDown });
   }
   return (
     <article className="mt-4 rounded-card border border-line bg-surface p-4">
-      <p className="text-sm font-medium">Suggested mix <Hint text="Cash, bond, and equity as shares of each month's deposit. Leave the field and the checks run again. They do not call AI." /></p>
+      <p className="text-sm font-medium">Suggested mix <Hint text="Cash, bond, and equity as shares of each month's deposit. Most months is the normal split. After a drop is used when the last three equity months add up to a loss. Leave a field and the checks run again. They do not call AI." /></p>
       <MixRow
-        label={same ? "Every month" : "Most months"}
+        label="Most months"
         values={up}
         busy={busy}
         onChange={(next) => {
@@ -246,18 +249,16 @@ function MixEditor({ rule, busy, onSave }: { rule: MixRule; busy: boolean; onSav
         }}
         onBlur={commit}
       />
-      {same ? null : (
-        <MixRow
-          label="After a drop"
-          values={down}
-          busy={busy}
-          onChange={(next) => {
-            draft.current = { ...draft.current, down: next };
-            setDown(next);
-          }}
-          onBlur={commit}
-        />
-      )}
+      <MixRow
+        label="After a drop"
+        values={down}
+        busy={busy}
+        onChange={(next) => {
+          draft.current = { ...draft.current, down: next };
+          setDown(next);
+        }}
+        onBlur={commit}
+      />
     </article>
   );
 }

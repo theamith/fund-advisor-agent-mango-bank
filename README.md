@@ -10,7 +10,7 @@ The model does not move money. It does not change how much the customer adds eac
 npm start
 ```
 
-Open Maya and Sam in their own tabs. The click-by-click speaker script is [speaker-notes.md](speaker-notes.md).
+Open Maya and Sam in their own tabs. The click-by-click speaker script is [notes.md](notes.md).
 
 | Who | Address | Sign in |
 |---|---|---|
