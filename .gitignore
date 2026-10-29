@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.output/
+.vercel/
+artifacts/
+server/policies/
+.DS_Store
+
+# Model key. Create this locally, or set GEMINI_API_KEY instead.
+config/gemini.server.json

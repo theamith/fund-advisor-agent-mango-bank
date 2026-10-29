@@ -10,7 +10,7 @@ The model does not move money. It does not change how much the customer adds eac
 npm start
 ```
 
-Then open:
+Open Maya and Sam in their own tabs. The click-by-click speaker script is [speaker-notes.md](speaker-notes.md).
 
 | Who | Address | Sign in |
 |---|---|---|
@@ -18,15 +18,34 @@ Then open:
 | Sam | http://localhost:8080 | `sam` / `mango` |
 | Operations | http://localhost:8080/admin | `ops` / `mango` |
 
-The model key lives only on the server, in [config/gemini.server.json](config/gemini.server.json):
+The key stays on the server. The browser never receives it. Use either of these:
+
+```bash
+export GEMINI_API_KEY=your-key
+npm start
+```
+
+or create `config/gemini.server.json` yourself. That file is gitignored:
 
 ```json
 { "apiKey": "your-key" }
 ```
 
-You can also set `GEMINI_API_KEY`. The browser never receives the key.
+`GEMINI_API_KEY` wins if both are set. Leave both empty, or let the call fail, and the app uses the rehearsal splits in `ruleFor()`. The checks still run. The operations audit says the model was not called.
 
-Leave the key empty, or let the call fail, and the app uses the rehearsal splits in `ruleFor()`. The checks still run. The operations audit says the model was not called.
+The preview download leaves out files whose names start with a dot, so `.gitignore` may be missing from the zip. The same rules are in the file named `gitignore` (no dot) at the project root. After you unzip, rename that file to `.gitignore`.
+
+```gitignore
+node_modules/
+dist/
+.output/
+.vercel/
+artifacts/
+server/policies/
+
+# Model key. Create this locally, or set GEMINI_API_KEY instead.
+config/gemini.server.json
+```
 
 ## What the customer does
 
@@ -37,7 +56,7 @@ Leave the key empty, or let the call fail, and the app uses the rehearsal splits
 5. Read the three checks and the graph.
 6. **Review this mix.** A second call rewrites the first one. It did not write the first one.
 7. **Use this mix** only if the checks passed. Later months use those numbers. This click does not call the model.
-8. **Check the next month.** On stage this is a button. In a real bank it would be a monthly job. The first click jumps six months. The mix already on stays unless the new suggestion passes the same checks.
+8. **Check the next month.** On stage this is a button. In a real bank it would be a monthly job. Each click moves one month. The mix already on stays unless the new suggestion passes the same checks.
 
 Sam is the same screen with his own goal. His prompt is not built from Maya’s goal. A session shows up in operations only after that customer adds a goal or opens Fund Advisor.
 
@@ -47,7 +66,7 @@ The left side is the decision. The right side is a picture of it.
 
 - The sentence under the title is the goal she typed. The monthly amount is hers.
 - **Suggest a mix** and **Improve this mix** call the model. The graph, the three checks, and **Use this mix** do not.
-- The three number boxes are the suggestion. Change a number and the checks run again, still with no model call.
+- The three number boxes are the suggestion. Leave a field and the checks run again, still with no model call.
 - **Rising** is the only market the first call may study. **Falling** and **Rate shock** are the exam.
 - The horizontal line on the graph is her target.
 - The dashed line knows the future. Each month it puts everything into whichever of cash, bond, or equity already went up. It is a ceiling, not a mix you can turn on.
@@ -113,34 +132,45 @@ flowchart LR
 | [src/components/fund-workbench.tsx](src/components/fund-workbench.tsx) | The Fund Advisor screen |
 | [src/components/account-app.tsx](src/components/account-app.tsx) | Account, goals, payments |
 | [src/components/admin-app.tsx](src/components/admin-app.tsx) | Sessions, health, prompt and reply |
-| [config/gemini.server.json](config/gemini.server.json) | The key |
+| `config/gemini.server.json` | Optional local key file. Gitignored. `GEMINI_API_KEY` overrides it. |
 
 ## Markets
 
-`market()` in [src/lib/fund.ts](src/lib/fund.ts) builds one row per month. Each row is a return for cash, bond, and equity. Nothing is downloaded.
+There is no market feed and no historic price file. Nothing is downloaded. The numbers are written in [src/lib/fund.ts](src/lib/fund.ts).
 
-| Market | What the table does | Shown to the model? |
-|---|---|---|
-| Rising | Equity about +1.8% every month | The first four equity numbers only |
-| Falling | Equity about −6% in the middle of the year | No |
-| Rate shock | Bonds and equity fall together for a stretch | No |
+`market()` builds one row per month of the goal. Maya’s 18-month goal gets 18 rows. Sam’s 12-month goal gets 12. Each row is a monthly return for cash, bond, and equity. The same formula runs every time, so the chart does not change between demos.
 
-`REALIZED`, just under that function, is the six months already passed when you press **Check the next month**.
+| Market | What the table does | How many rows | Shown to the model? |
+|---|---|---|---|
+| Rising | Cash +0.3%, bond +0.5%, equity +1.8%, every month | One row per month of the goal | Only the first **four** equity numbers: `0.018, 0.018, 0.018, 0.018` |
+| Falling | Equity about −6% in months 6 through 12 | One row per month of the goal | No |
+| Rate shock | Bonds and equity fall together in months 3 through 9 | One row per month of the goal | No |
 
-`runPath()` is the graph. Start at zero. Each month, add her deposit, apply that month’s three returns with the split, and compound. Same inputs, same line.
+`REALIZED`, just under `market()`, is a second table. It is what “already happened” when you press **Check the next month**. The first six months are written out. After that, the code repeats a short pattern. Each click uses one of those months. It is not a download, and it is not the Rising table.
+
+The chart on the right uses `market()` for the market you selected. The balance on the card uses `REALIZED` and the mix already on. Those two numbers are not meant to match.
 
 ## What the model actually sees
 
-`authorPrompt()` pastes the goal and those four Rising numbers, and says not to receive Falling or Rate shock. Code writes that prompt. There is no trend model in front of it.
+The model is not trained. There is no fine-tune, no gradient, and no dataset it fits. `authorPrompt()` pastes four Rising equity numbers into a prompt and asks for a split. Gemini answers with a function. `ruleFromText()` reads the last `cash`, `bond`, and `equity` values out of that reply. Those become the percentages on the screen.
 
-`judgePrompt()` does not get the tables. It is told an exam exists, and it is given the first suggestion to rewrite.
+So the “training data” is those four numbers, in `authorPrompt()` in [src/lib/fund.ts](src/lib/fund.ts). The rest of Rising, and all of Falling and Rate shock, stay in `market()` and are used only by `runPath()` after the reply comes back. The model does not see them, and it does not predict a price. It proposes three weights. The code then scores those weights.
 
-`askGemini()` in [src/lib/bank.functions.ts](src/lib/bank.functions.ts) is the only place the key is used. `ruleFromReply()` reads `cash`, `bond`, and `equity` out of the reply. Those three numbers are what Maya sees. If the reply has no numbers, she sees `ruleFor()`:
+| Call | Data in the prompt | What it is asked to do |
+|---|---|---|
+| Suggest a mix | The goal, plus four Rising equity returns | Write the first split |
+| Review this mix | The goal and the split already on screen. No return table | Rewrite that split so equity stays at or under 70% |
+| Check the next month | The months already checked, one equity number per click, from `REALIZED` | Suggest the next split. It still does not get Falling or Rate shock |
+| Improve this mix | The split from the last check. No return table | Rewrite it again |
 
-- First suggestion: 100% equity. The safety check fails.
+`askGemini()` in [src/lib/bank.functions.ts](src/lib/bank.functions.ts) is the only place the key is used. If the reply has no numbers, the screen uses `ruleFor()`:
+
+- First suggestion, and a next-month call with no numbers: 100% equity. The safety check fails.
 - After review: 15% cash, 20% bond, 65% equity in a normal month, and 30 / 40 / 30 after a drop.
 
 The `.py` file under `server/policies/<customer>/` is a record of the split. The graph and the checks run the same weights in TypeScript. The customer does not see the file or the prompt.
+
+`runPath()` is the graph. Start at zero. Each month, add the deposit, apply that month’s three returns with the split, and compound. Same inputs, same line.
 
 ## The three checks
 
