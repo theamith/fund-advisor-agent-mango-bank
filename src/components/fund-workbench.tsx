@@ -103,15 +103,17 @@ export function FundWorkbench({
             </button>
           ) : null}
           {view.shipped && view.phase === "ready" && view.elapsed === 0 ? <p className="mt-2 text-sm text-good">This mix is on. Later months use it until a new one does better.</p> : null}
-          {view.phase === "fail" ? <p className="mt-2 text-sm text-bad">This suggestion is blocked. The mix already on is unchanged.</p> : null}
+          {view.phase === "fail" ? <p className="mt-2 text-sm text-bad">This suggestion is blocked. The mix already on is unchanged. Change the numbers below, or ask for an improvement.</p> : null}
           {view.phase === "pass" && view.report?.ship ? <p className="mt-2 text-sm text-muted">This mix passed. Switch to it, or it is not used.</p> : null}
-          {view.phase === "pass" && !view.report?.ship ? <p className="mt-2 text-sm text-muted">This mix stays off. The one already on is unchanged.</p> : null}
+          {view.phase === "pass" && !view.report?.ship ? <p className="mt-2 text-sm text-muted">This mix stays off. The one already on is unchanged. Change the numbers below and click outside a box, or keep the current mix.</p> : null}
           {view.outcome === "goal" ? <p className="mt-2 text-sm text-good">You reached the goal at month {view.elapsed}.</p> : null}
           {view.outcome === "tenure" ? <p className="mt-2 text-sm text-muted">The {view.goal?.months} months are over. Balance {view.pace ? money(view.pace.balance) : ""}. The mix stops.</p> : null}
           {view.version === 1 && view.report && !view.report.level1.pass ? <p className="mt-2 text-sm text-muted">Equity is over 70%, or the shares do not add to 100%. Review this mix can try a legal split. Nothing turns on yet.</p> : null}
-          {view.version === 1 && view.report?.level1.pass && !view.report.level3.pass ? <p className="mt-2 text-sm text-muted">The safety limit passed. The exam markets did not, so this mix stays off.</p> : null}
+          {view.version === 1 && view.report?.level1.pass && !view.report.level3.pass ? <p className="mt-2 text-sm text-muted">The safety limit passed. The exam markets did not, so this mix stays off until a review or an edit passes them.</p> : null}
+          {view.version === 1 && view.report?.level1.pass && view.report.level3.pass ? <p className="mt-2 text-sm text-muted">These numbers pass the exam. Review this mix before it can be turned on.</p> : null}
           {view.version === 2 && !view.shipped && view.report && !view.report.ship ? (
             <p className="mt-2 text-sm text-bad">
+              {view.repeated ? "The review sent back the same numbers. " : ""}
               {view.report.level1.pass ? view.report.level3.detail : view.report.level1.detail} Change the numbers below and click outside a box. The checks run again. No AI call.
             </p>
           ) : null}

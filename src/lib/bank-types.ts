@@ -38,6 +38,7 @@ export type RetailView = {
   elapsed: number;
   rule: MixRule | null;
   report: TestReport | null;
+  repeated: boolean;
   gemini: ModelCall | null;
 };
 

@@ -138,14 +138,16 @@ This calls the model.
 
 Say: “The prompt contains her goal and four rising equity numbers: 1.8 percent, four times. It does not contain Falling or Rate shock. The model is not trained on a price history. It is asked for three weights. Code reads those weights out of the reply.”
 
-The number boxes are the reply, as percentages.
+The number boxes are the reply, as percentages. There are always two rows.
 
-- One row, **Every month**, means the same split in every month.
-- Two rows, **Most months** and **After a drop**, means a second split when the last three equity months sum to a loss.
+- **Most months** is the normal split.
+- **After a drop** is used when the last three equity months add up to a loss. If the model only returned one split, both rows start the same. Change **After a drop** yourself.
 
 Change a number, then click outside the field. The checks run again. That edit does not call the model.
 
-If the reply is 100 percent equity, the first check fails. Say: “A strong line on Rising is not enough. Equity over 70 percent is blocked.”
+If equity is over 70 percent, the first check fails. Say: “A strong line on Rising is not enough. Equity over 70 percent is blocked.”
+
+A legal mix can still fail. Maya’s 30 / 0 / 70 passes the safety limit and wins Rate shock, but it loses Falling: about $4,652 from the ideal, against $4,411 for an even split. It has to win both. Set **After a drop** to 30 cash, 40 bond, 30 equity, click outside the box, and **Use this mix** turns on.
 
 **Use this mix** is not on the screen yet.
 
@@ -156,6 +158,8 @@ This is a second model call. It did not write the first split. It is shown the s
 Say: “This is the judge. It does not grade its own homework, and it still cannot see Falling or Rate shock. The checks are outside the model.”
 
 Read the three checks again. If they pass, **Use this mix** turns gold. If they do not, the button stays off. Say why, from the red check, not from the chart alone.
+
+If the red text starts with “The review sent back the same numbers,” the second call copied the first mix. That is not a display error. Change both rows and click outside a box. The checks run again with no AI call. A mix that passes for Maya is **Most months** 15 cash, 20 bond, 65 equity, and **After a drop** 30 cash, 40 bond, 30 equity. Changing only the drop row is not enough when most months is only 20 percent equity, because Rate shock still loses.
 
 ### 3. Use this mix
 

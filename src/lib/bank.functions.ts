@@ -1,12 +1,12 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createServerFn } from "@tanstack/react-start";
-import { evaluate, filePath, neededMonthly, payAt, roll, recheckJudgePrompt, recheckPrompt, sourceFor, sourceFromRule, authorPrompt, judgePrompt, ruleFor, ruleFromText, applyRule, type Goal, type MixRule, type Pace, type Weights } from "@/lib/fund";
+import { applyRule, authorPrompt, evaluate, filePath, judgePrompt, neededMonthly, payAt, recheckJudgePrompt, recheckPrompt, roll, ruleFor, ruleFromText, sameRule, sourceFor, sourceFromRule, type Goal, type MixRule } from "@/lib/fund";
 import type { AdminView, AuditRow, BankTxn, ModelCall, PersonId, RetailView, SavedGoal } from "@/lib/bank-types";
 
 const PEOPLE = {
-  maya: { name: "Maya", account: "Everyday checking ••4291", cash: 42000 },
-  sam: { name: "Sam", account: "Everyday checking ••1784", cash: 18600 },
+  maya: { name: "Maya", account: "Everyday checking ···4291", cash: 42000 },
+  sam: { name: "Sam", account: "Everyday checking ···1784", cash: 18600 },
 } as const;
 
 const TXNS: Record<PersonId, BankTxn[]> = {
@@ -39,7 +39,7 @@ type Desk = {
   version: 0 | 1 | 2 | 3 | 4;
   live: 0 | 2 | 4;
   shipped: boolean;
-  pace: Pace | null;
+  pace: import("@/lib/fund").Pace | null;
   paceAccepted: boolean;
   phase: "ready" | "fail" | "pass" | "done";
   outcome: "goal" | "tenure" | null;
@@ -47,12 +47,17 @@ type Desk = {
   equityTrail: number[];
   rule: MixRule | null;
   liveRule: MixRule | null;
+  repeated: boolean;
   gemini: ModelCall | null;
 };
 
+function blank(cash: number, txns: BankTxn[]): Desk {
+  return { enrolled: false, advisorOffer: false, cash, txns: txns.map((row) => ({ ...row })), goals: [], activeGoalId: null, goal: null, version: 0, live: 0, shipped: false, pace: null, paceAccepted: false, phase: "ready", outcome: null, elapsed: 0, equityTrail: [], rule: null, liveRule: null, repeated: false, gemini: null };
+}
+
 const desks: Record<PersonId, Desk> = {
-  maya: { enrolled: false, advisorOffer: false, cash: PEOPLE.maya.cash, txns: TXNS.maya.map((row) => ({ ...row })), goals: [], activeGoalId: null, goal: null, version: 0, live: 0, shipped: false, pace: null, paceAccepted: false, phase: "ready", outcome: null, elapsed: 0, equityTrail: [], rule: null, liveRule: null, gemini: null },
-  sam: { enrolled: false, advisorOffer: false, cash: PEOPLE.sam.cash, txns: TXNS.sam.map((row) => ({ ...row })), goals: [], activeGoalId: null, goal: null, version: 0, live: 0, shipped: false, pace: null, paceAccepted: false, phase: "ready", outcome: null, elapsed: 0, equityTrail: [], rule: null, liveRule: null, gemini: null },
+  maya: blank(PEOPLE.maya.cash, TXNS.maya),
+  sam: blank(PEOPLE.sam.cash, TXNS.sam),
 };
 
 const audit: AuditRow[] = [];
@@ -72,9 +77,7 @@ function geminiKey() {
 
 async function askGemini(where: ModelCall["where"], prompt: string): Promise<ModelCall> {
   const key = geminiKey();
-  if (!key) {
-    return { where, source: "rehearsal", prompt, reply: "No key in config/gemini.server.json. The rehearsal file was stored instead.", ms: 0, error: "" };
-  }
+  if (!key) return { where, source: "rehearsal", prompt, reply: "No key in config/gemini.server.json. The rehearsal file was stored instead.", ms: 0, error: "" };
   metrics.attempts += 1;
   const started = Date.now();
   try {
@@ -104,11 +107,6 @@ async function askGemini(where: ModelCall["where"], prompt: string): Promise<Mod
   }
 }
 
-function mixNote(call: ModelCall, fromReply: boolean) {
-  if (call.source !== "gemini") return "Rehearsal mix. AI was not called.";
-  return fromReply ? "The mix on screen is the AI reply." : "The reply had no cash, bond, and equity numbers, so the rehearsal mix is shown.";
-}
-
 function asPerson(value: unknown): PersonId {
   if (value === "maya" || value === "sam") return value;
   throw new Error("Unknown customer.");
@@ -117,6 +115,11 @@ function asPerson(value: unknown): PersonId {
 function stamp(who: string, action: string, detail: string, model?: { prompt: string; reply: string }) {
   audit.unshift({ id: crypto.randomUUID(), at: new Date().toLocaleTimeString(), who, action, detail, prompt: model?.prompt ?? "", reply: model?.reply ?? "" });
   if (audit.length > 80) audit.pop();
+}
+
+function mixNote(call: ModelCall, fromReply: boolean) {
+  if (call.source !== "gemini") return "Rehearsal mix. AI was not called.";
+  return fromReply ? "The mix on screen is the AI reply." : "The reply had no cash, bond, and equity numbers, so the rehearsal mix is shown.";
 }
 
 function saveFile(id: PersonId, version: 0 | 1 | 2 | 3 | 4) {
@@ -134,6 +137,13 @@ function reportFor(id: PersonId) {
   if (!desk.goal) return null;
   const pay = (index: number) => payAt(desk.goal!, index, desk.pace, desk.paceAccepted);
   return evaluate(id, desk.goal, desk.version, pay, desk.live === 4 ? 4 : 2, desk.rule, desk.liveRule, desk.pace?.month ?? desk.elapsed);
+}
+
+function refreshCycle(desk: Desk, id: PersonId) {
+  if (desk.version < 3 || desk.phase === "done") return;
+  const report = reportFor(id);
+  if (report?.ship) desk.version = 4;
+  desk.phase = report?.level1.pass ? "pass" : "fail";
 }
 
 function retail(id: PersonId): RetailView {
@@ -159,6 +169,7 @@ function retail(id: PersonId): RetailView {
     elapsed: desk.elapsed,
     rule: desk.rule,
     report: reportFor(id),
+    repeated: desk.repeated,
     gemini: desk.gemini ? { ...desk.gemini, prompt: "", reply: "" } : null,
   };
 }
@@ -207,6 +218,7 @@ export const setGoal = createServerFn({ method: "POST" })
     desk.equityTrail = [];
     desk.rule = null;
     desk.liveRule = null;
+    desk.repeated = false;
     desk.advisorOffer = true;
     const path = saveFile(data.id, 0);
     stamp(PEOPLE[data.id].name, "Goal set", `${data.name}, $${data.target} in ${data.months} months, $${data.monthly} a month. ${path} is the human file.`);
@@ -239,6 +251,7 @@ export const openGoal = createServerFn({ method: "POST" })
       desk.equityTrail = [];
       desk.rule = null;
       desk.liveRule = null;
+      desk.repeated = false;
       saveFile(data.id, 0);
       stamp(PEOPLE[data.id].name, "Opened a goal", `${saved.name}. Fund Advisor starts again from the human file for this goal.`);
     }
@@ -265,6 +278,7 @@ export const writeCandidate = createServerFn({ method: "POST" })
     desk.version = 1;
     const adopted = ruleFromText(call.reply, ruleFor(1));
     desk.rule = adopted.rule;
+    desk.repeated = false;
     desk.shipped = false;
     const path = saveFile(data, 1);
     stamp(PEOPLE[data].name, "Candidate written", `${path}. ${mixNote(call, adopted.fromReply)} Rising market only.`, call);
@@ -276,14 +290,16 @@ export const judgeRewrite = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const desk = desks[data];
     if (desk.version < 1 || !desk.goal) throw new Error("Write a candidate first.");
+    const previous = desk.rule;
     const call = await askGemini("judge", judgePrompt(data, desk.goal, sourceFromRule(desk.rule ?? ruleFor(1))));
     desk.gemini = call;
     desk.version = 2;
     const adopted = ruleFromText(call.reply, ruleFor(2));
+    desk.repeated = previous ? sameRule(previous, adopted.rule) : false;
     desk.rule = adopted.rule;
     desk.shipped = false;
     const path = saveFile(data, 2);
-    stamp(PEOPLE[data].name, "Judge rewrote the file", `${path}. ${mixNote(call, adopted.fromReply)}`, call);
+    stamp(PEOPLE[data].name, "Judge rewrote the file", `${path}. ${mixNote(call, adopted.fromReply)}${desk.repeated ? " Same weights as the first mix." : ""}`, call);
     return retail(data);
   });
 
@@ -311,8 +327,7 @@ export const checkNext = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const desk = desks[data];
     if (!desk.goal || !desk.shipped || desk.phase !== "ready") throw new Error("Ship a file before the next cycle.");
-    const step = 1;
-    const through = Math.min(desk.goal.months, desk.elapsed + step);
+    const through = Math.min(desk.goal.months, desk.elapsed + 1);
     const pick = (history: number[]) => applyRule(desk.liveRule ?? ruleFor(desk.live === 4 ? 4 : 2), history);
     const pay = (index: number) => payAt(desk.goal!, index, desk.pace, desk.paceAccepted);
     const rolled = roll(desk.goal, desk.elapsed, through, desk.elapsed === 0 ? 0 : (desk.pace?.balance ?? 0), desk.equityTrail, pick, pay);
@@ -337,6 +352,7 @@ export const checkNext = createServerFn({ method: "POST" })
     desk.gemini = call;
     const adopted = ruleFromText(call.reply, ruleFor(3));
     desk.rule = adopted.rule;
+    desk.repeated = false;
     desk.version = 3;
     const report = reportFor(data);
     desk.phase = report?.level1.pass ? "pass" : "fail";
@@ -351,12 +367,15 @@ export const judgeRecheck = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     const desk = desks[data];
     if (desk.phase !== "fail" || !desk.goal) throw new Error("Run the next cycle first.");
+    const previous = desk.rule;
     const call = await askGemini("recheck-judge", recheckJudgePrompt(data, desk.goal, sourceFromRule(desk.rule ?? ruleFor(3))));
     desk.gemini = call;
     const adopted = ruleFromText(call.reply, ruleFor(4));
+    desk.repeated = previous ? sameRule(previous, adopted.rule) : false;
     desk.rule = adopted.rule;
     desk.version = 4;
-    desk.phase = reportFor(data)?.level1.pass ? "pass" : "fail";
+    const report = reportFor(data);
+    desk.phase = report?.level1.pass ? "pass" : "fail";
     const path = saveFile(data, 4);
     stamp(PEOPLE[data].name, "Recheck rewritten", `${path}. ${mixNote(call, adopted.fromReply)} It is not used until it beats the mix already on.`, call);
     return retail(data);
@@ -402,6 +421,7 @@ export const resetGoal = createServerFn({ method: "POST" })
     desk.equityTrail = [];
     desk.rule = null;
     desk.liveRule = null;
+    desk.repeated = false;
     desk.gemini = null;
     const path = saveFile(data, 0);
     stamp(PEOPLE[data].name, "Goal reset", `${path} is the human file again. Nothing is live.`);
@@ -425,6 +445,8 @@ export const setMix = createServerFn({ method: "POST" })
     const desk = desks[data.id];
     if (!desk.goal || desk.version < 1) throw new Error("Ask for a mix first.");
     desk.rule = { up: data.up, down: data.down };
+    desk.repeated = false;
+    refreshCycle(desk, data.id);
     stamp(PEOPLE[data.id].name, "Mix adjusted", `Most months ${Math.round(data.up.cash * 100)}/${Math.round(data.up.bond * 100)}/${Math.round(data.up.equity * 100)}. After a drop ${Math.round(data.down.cash * 100)}/${Math.round(data.down.bond * 100)}/${Math.round(data.down.equity * 100)}.`);
     return retail(data.id);
   });
@@ -456,6 +478,7 @@ export const removeGoal = createServerFn({ method: "POST" })
       desk.equityTrail = [];
       desk.rule = null;
       desk.liveRule = null;
+      desk.repeated = false;
       desk.gemini = null;
       desk.advisorOffer = false;
       if (desk.goal) saveFile(data.id, 0);
@@ -489,42 +512,42 @@ export const pay = createServerFn({ method: "POST" })
     const signed = data.direction === "in" ? data.amount : -data.amount;
     desk.cash += signed;
     desk.txns.unshift({ id: crypto.randomUUID(), daysAgo: 0, label: data.payee, amount: signed });
-    stamp(PEOPLE[data.id].name, data.direction === "in" ? "Deposit" : "Payment", `${data.payee} ${data.amount}. Fund Advisor did not move this money.`);
+    stamp(PEOPLE[data.id].name, data.direction === "in" ? "Deposit" : "Payment", `${data.payee} $${data.amount}. Fund Advisor did not move this money.`);
     return retail(data.id);
   });
 
 export const getAdmin = createServerFn({ method: "POST" })
-  .validator((data: unknown) => data ?? null)
+  .validator((data: unknown) => data)
   .handler(async () => {
-  const view: AdminView = {
-    serving: "up",
-    geminiConfigured: Boolean(geminiKey()),
-    attempts: metrics.attempts,
-    successes: metrics.successes,
-    lastMs: metrics.lastMs,
-    lastError: metrics.lastError,
-    audit,
-    customers: (["maya", "sam"] as PersonId[])
-      .filter((id) => desks[id].enrolled || desks[id].goal !== null || desks[id].version > 0 || desks[id].gemini !== null)
-      .map((id) => ({
-      id,
-      name: PEOPLE[id].name,
-      enrolled: desks[id].enrolled,
-      cash: desks[id].cash,
-      goal: desks[id].goal,
-      version: desks[id].version,
-      live: desks[id].live,
-      shipped: desks[id].shipped,
-      pace: desks[id].pace,
-      paceAccepted: desks[id].paceAccepted,
-      phase: desks[id].phase,
-      outcome: desks[id].outcome,
-      elapsed: desks[id].elapsed,
-      rule: desks[id].rule,
-      path: desks[id].goal ? filePath(id, desks[id].live || desks[id].version) : null,
-      report: reportFor(id),
-      gemini: desks[id].gemini,
-    })),
-  };
-  return view;
-});
+    const view: AdminView = {
+      serving: "up",
+      geminiConfigured: Boolean(geminiKey()),
+      attempts: metrics.attempts,
+      successes: metrics.successes,
+      lastMs: metrics.lastMs,
+      lastError: metrics.lastError,
+      audit,
+      customers: (["maya", "sam"] as PersonId[])
+        .filter((id) => desks[id].enrolled || desks[id].goal !== null || desks[id].version > 0 || desks[id].gemini !== null)
+        .map((id) => ({
+          id,
+          name: PEOPLE[id].name,
+          enrolled: desks[id].enrolled,
+          cash: desks[id].cash,
+          goal: desks[id].goal,
+          version: desks[id].version,
+          live: desks[id].live,
+          shipped: desks[id].shipped,
+          pace: desks[id].pace,
+          paceAccepted: desks[id].paceAccepted,
+          phase: desks[id].phase,
+          outcome: desks[id].outcome,
+          elapsed: desks[id].elapsed,
+          rule: desks[id].rule,
+          path: desks[id].goal ? filePath(id, desks[id].live || desks[id].version) : null,
+          report: reportFor(id),
+          gemini: desks[id].gemini,
+        })),
+    };
+    return view;
+  });

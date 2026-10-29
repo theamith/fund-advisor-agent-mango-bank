@@ -52,7 +52,7 @@ The left side is the decision. The right side is a picture of it.
 
 - The sentence under the title is the goal she typed. The monthly amount is hers.
 - **Suggest a mix** and **Improve this mix** call the model. The graph, the three checks, and **Use this mix** do not.
-- The three number boxes are the suggestion. Leave a field and the checks run again, still with no model call.
+- Two rows of numbers are the suggestion: **Most months**, and **After a drop**. Leave a field and the checks run again, still with no model call. If a review sends the same numbers back, the screen says so. Lower equity on **After a drop** and the checks run again. A later month works the same way: a blocked mix can be edited, and **Switch to this mix** appears only after it passes.
 - **Rising** is the only market the first call may study. **Falling** and **Rate shock** are the exam.
 - The horizontal line on the graph is her target.
 - The dashed line knows the future. Each month it puts everything into whichever of cash, bond, or equity already went up. It is a ceiling, not a mix you can turn on.

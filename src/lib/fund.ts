@@ -288,9 +288,10 @@ export function judgePrompt(person: string, goal: Goal, candidate: string): stri
     "You are the judge. You did not write this file. Do not grade your own work.",
     `Customer: ${person}. Goal: ${goal.name}. ${goal.months} months, $${goal.monthly} added each month.`,
     "Held-out markets are Falling and Rate shock. The author did not see them.",
-    "Rewrite allocate(market) so equity stays at or under 0.70.",
-    "If the last three equity returns sum to less than 0, cut equity. Otherwise stay under the rail.",
-    "The last return is the normal month. Do not copy a 100 percent equity example.",
+    "Rewrite allocate(market). Do not return the same weights.",
+    "After a drop, equity must be at or under 0.40, and lower than the normal month.",
+    "The normal month stays at or under 0.70. Weights in each return must sum to 1.",
+    "The last return is the normal month.",
     "Candidate:",
     candidate,
   ].join("\n");
@@ -315,8 +316,9 @@ export function recheckJudgePrompt(person: string, goal: Goal, candidate: string
     "You are the judge. You did not write this draft. Do not grade your own work.",
     `Customer: ${person}. Goal length is ${goal.months} months. Replace the live mix only if you beat it.`,
     "Exam markets are Falling and Rate shock. The author did not see them.",
-    "When the last three equity returns sum to less than 0, hold more cash. Equity stays at or under 0.70.",
-    "Do not change the monthly amount. Do not copy a 100 percent equity example.",
+    "Do not return the same weights. Do not change the monthly amount.",
+    "When the last three equity returns sum to less than 0, equity must be at or under 0.40.",
+    "The normal month stays at or under 0.70. The last return is the normal month.",
     "Draft:",
     candidate,
   ].join("\n");
@@ -417,9 +419,9 @@ export function evaluate(
           rows: scored,
         }
       : {
-          pass: version >= 2 && level1.pass && beatsHuman,
+          pass: version >= 1 && level1.pass && beatsHuman,
           detail:
-            version < 2
+            version < 1
               ? "The exam is Falling and Rate shock. A file that only wins on Rising does not pass."
               : !level1.pass
                 ? "The safety limit failed, so the exam does not count."
@@ -433,8 +435,10 @@ export function evaluate(
 }
 
 export function ruleFromText(reply: string, fallback: MixRule): { rule: MixRule; fromReply: boolean } {
+  const parts = reply.split(/def allocate\b/i);
+  const source = parts.length > 1 ? parts[parts.length - 1] : reply;
   const found: Weights[] = [];
-  for (const chunk of reply.match(/\{[^{}]+\}/g) ?? []) {
+  for (const chunk of source.match(/\{[^{}]+\}/g) ?? []) {
     try {
       const parsed = JSON.parse(chunk.replace(/'/g, '"')) as { cash?: unknown; bond?: unknown; equity?: unknown };
       let cash = Number(parsed.cash);
@@ -455,6 +459,11 @@ export function ruleFromText(reply: string, fallback: MixRule): { rule: MixRule;
   const up = found[found.length - 1];
   const down = found.length >= 2 ? found[found.length - 2] : up;
   return { rule: { up, down }, fromReply: true };
+}
+
+export function sameRule(left: MixRule, right: MixRule): boolean {
+  const near = (a: Weights, b: Weights) => Math.abs(a.cash - b.cash) < 0.011 && Math.abs(a.bond - b.bond) < 0.011 && Math.abs(a.equity - b.equity) < 0.011;
+  return near(left.up, right.up) && near(left.down, right.down);
 }
 
 export function sourceFromRule(rule: MixRule): string {
